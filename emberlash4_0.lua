@@ -1,8 +1,43 @@
 -- Custom Anti-Aim menu with Main/Builder separation, full yaw logic, sway, random, way, custom body_yaw.
 -- Added: Avoid Backstab (Main), 'Freestanding' condition, and now 'Freestanding active' can be toggled by a hotkey.
+-- Updated: Body yaw selection (Off/Jitter/Static) per 180 mode condition, with sliders and logic.
+-- Optimized: Body yaw only updates when changed.
+-- Hides original AA and Fake lag controls always, regardless of value changes.
+-- L/R Default: switches L/R with 100ms delay, no user delay slider.
+-- Miss indicator: name, hitchance, backtrack, damage.
 
 local aa_btn = ui.new_button("AA", "Anti-aimbot angles", "Anti Aim", function() end)
 local mode_combo = ui.new_combobox("AA", "Anti-aimbot angles", "Mode", {"Main", "Builder"})
+
+-- HIDE all original AA and Fakelag controls, always (even if values change)
+local hide_refs = {
+    {ui.reference("AA", "Anti-aimbot angles", "Enabled")},
+    {ui.reference("AA", "Anti-aimbot angles", "Pitch")},
+    {ui.reference("AA", "Anti-aimbot angles", "Yaw")},
+    {ui.reference("AA", "Anti-aimbot angles", "Yaw base")},
+    {ui.reference("AA", "Anti-aimbot angles", "Yaw jitter")},
+    {ui.reference("AA", "Anti-aimbot angles", "Body yaw")},
+    {ui.reference("AA", "Anti-aimbot angles", "Roll")},
+    {ui.reference("AA", "Anti-aimbot angles", "Freestanding")},
+    {ui.reference("AA", "Anti-aimbot angles", "Edge yaw")},
+    {ui.reference("AA", "Fake lag", "Limit")},
+    {ui.reference("AA", "Fake lag", "Variance")},
+    {ui.reference("AA", "Fake lag", "Amount")},
+    {ui.reference("AA", "Fake lag", "Enabled")},
+}
+
+local function hide_original_refs()
+    for _, refs in ipairs(hide_refs) do
+        for _, ref in ipairs(refs) do
+            ui.set_visible(ref, false)
+        end
+    end
+end
+
+hide_original_refs()
+client.set_event_callback("paint_ui", hide_original_refs) -- ensure always hidden
+
+-- == основной скрипт ==
 
 -- Main controls
 local pitch_combo = ui.new_combobox("AA", "Anti-aimbot angles", "Pitch", {"Off", "Down", "Up"})
@@ -23,6 +58,7 @@ local yaw_180_label, modebox, lr_type_combo, lr_slider_L, lr_slider_R, lr_rand_L
 local sway_type_combo, sway_speed_slider = {}, {}
 local random_slider_L, random_slider_R, random_delay_slider = {}, {}, {}
 local way_count_slider, way_yaw_sliders, way_delay_sliders = {}, {}, {}
+local body_yaw_mode, body_yaw_slider = {}, {}
 local condition_names = {"Standing", "Moving", "Crouch", "Crouch moving", "Air", "Air crouch", "Freestanding"}
 
 for _, cond in ipairs(condition_names) do
@@ -48,6 +84,11 @@ for _, cond in ipairs(condition_names) do
         ui.set_visible(way_yaw_sliders[cond][w], false)
         ui.set_visible(way_delay_sliders[cond][w], false)
     end
+    -- Body Yaw controls
+    body_yaw_mode[cond] = ui.new_combobox("AA", "Anti-aimbot angles", cond .. " Body Yaw Mode", {"Off", "Jitter", "Static"})
+    body_yaw_slider[cond] = ui.new_slider("AA", "Anti-aimbot angles", cond .. " Body Yaw value", -180, 180, 0, true, "°")
+    ui.set_visible(body_yaw_mode[cond], false)
+    ui.set_visible(body_yaw_slider[cond], false)
     ui.set_visible(yaw_180_label[cond], false)
     ui.set_visible(modebox[cond], false)
     ui.set_visible(lr_type_combo[cond], false)
@@ -91,6 +132,8 @@ local function update_mode_ui()
             ui.set_visible(random_slider_R[cond], false)
             ui.set_visible(random_delay_slider[cond], false)
             ui.set_visible(way_count_slider[cond], false)
+            ui.set_visible(body_yaw_mode[cond], false)
+            ui.set_visible(body_yaw_slider[cond], false)
             for w = 1, 7 do
                 ui.set_visible(way_yaw_sliders[cond][w], false)
                 ui.set_visible(way_delay_sliders[cond][w], false)
@@ -186,6 +229,14 @@ local function update_mode_ui()
                             ui.set_visible(way_delay_sliders[cond][w], w <= count)
                         end
                     end
+                    -- Body Yaw UI
+                    ui.set_visible(body_yaw_mode[cond], true)
+                    local by_mode = ui.get(body_yaw_mode[cond])
+                    if by_mode == "Jitter" or by_mode == "Static" then
+                        ui.set_visible(body_yaw_slider[cond], true)
+                    else
+                        ui.set_visible(body_yaw_slider[cond], false)
+                    end
                 else
                     ui.set_visible(modebox[cond], false)
                     ui.set_visible(lr_type_combo[cond], false)
@@ -200,6 +251,8 @@ local function update_mode_ui()
                     ui.set_visible(random_slider_R[cond], false)
                     ui.set_visible(random_delay_slider[cond], false)
                     ui.set_visible(way_count_slider[cond], false)
+                    ui.set_visible(body_yaw_mode[cond], false)
+                    ui.set_visible(body_yaw_slider[cond], false)
                     for w = 1, 7 do
                         ui.set_visible(way_yaw_sliders[cond][w], false)
                         ui.set_visible(way_delay_sliders[cond][w], false)
@@ -224,6 +277,8 @@ local function update_mode_ui()
                 ui.set_visible(random_slider_R[cond], false)
                 ui.set_visible(random_delay_slider[cond], false)
                 ui.set_visible(way_count_slider[cond], false)
+                ui.set_visible(body_yaw_mode[cond], false)
+                ui.set_visible(body_yaw_slider[cond], false)
                 for w = 1, 7 do
                     ui.set_visible(way_yaw_sliders[cond][w], false)
                     ui.set_visible(way_delay_sliders[cond][w], false)
@@ -257,12 +312,15 @@ for _, cond in ipairs(condition_names) do
     ui.set_callback(lr_type_combo[cond], update_mode_ui)
     ui.set_callback(sway_type_combo[cond], update_mode_ui)
     ui.set_callback(way_count_slider[cond], update_mode_ui)
+    ui.set_callback(body_yaw_mode[cond], update_mode_ui)
+    ui.set_callback(body_yaw_slider[cond], update_mode_ui)
 end
 
 -- == AA logic ==
 local yaw_ref, yaw_slider_ref = ui.reference("AA", "Anti-aimbot angles", "Yaw")
 local yaw_base_ref = ui.reference("AA", "Anti-aimbot angles", "Yaw base")
 local pitch_ref = ui.reference("AA", "Anti-aimbot angles", "Pitch")
+local body_yaw_ref, body_yaw_slider_ref = ui.reference("AA", "Anti-aimbot angles", "Body yaw")
 
 local function set_main_aa()
     local pitch = ui.get(pitch_combo)
@@ -308,14 +366,22 @@ local function get_player_condition(ent)
     return nil
 end
 
-local lr_tick_counter, lr_state, sway_phase, random_delay_timer, way_index, way_timer = {}, {}, {}, {}, {}, {}
+local lr_state, lr_default_last_switch = {}, {}
+local sway_phase, random_delay_timer, way_index, way_timer = {}, {}, {}, {}
 for _, cond in ipairs(condition_names) do
-    lr_tick_counter[cond] = 0
     lr_state[cond] = "L"
+    lr_default_last_switch[cond] = 0
     sway_phase[cond] = 0
     random_delay_timer[cond] = 0
     way_index[cond] = 1
     way_timer[cond] = 0
+end
+
+-- For Body Yaw state tracking
+local last_body_yaw_mode, last_body_yaw_value = {}, {}
+for _, cond in ipairs(condition_names) do
+    last_body_yaw_mode[cond] = nil
+    last_body_yaw_value[cond] = nil
 end
 
 -- Helper: get closest enemy and distance
@@ -369,13 +435,43 @@ client.set_event_callback("setup_command", function(cmd)
     local yaw_mode = ui.get(yaw_main_combo)
     if yaw_mode ~= "180" then return end
     local m = ui.get(modebox[cond])
-    local realtime = globals.realtime() * 1000 -- ms
+    local curtime = globals.realtime()
+    local tickinterval = globals.tickinterval()
+
+    -- Body Yaw logic per condition (only apply if changed)
+    local by_mode = ui.get(body_yaw_mode[cond])
+    local by_val = (by_mode == "Jitter" or by_mode == "Static") and ui.get(body_yaw_slider[cond]) or nil
+
+    local need_update = false
+    if last_body_yaw_mode[cond] ~= by_mode then
+        need_update = true
+    elseif (by_mode == "Jitter" or by_mode == "Static") and last_body_yaw_value[cond] ~= by_val then
+        need_update = true
+    end
+
+    if need_update then
+        if by_mode == "Off" then
+            ui.set(body_yaw_ref, "Off")
+        elseif by_mode == "Jitter" then
+            ui.set(body_yaw_ref, "Jitter")
+            ui.set(body_yaw_slider_ref, by_val)
+        elseif by_mode == "Static" then
+            ui.set(body_yaw_ref, "Static")
+            ui.set(body_yaw_slider_ref, by_val)
+        end
+        last_body_yaw_mode[cond] = by_mode
+        last_body_yaw_value[cond] = by_val
+    end
 
     if m == "L/R" then
         local lr_type = ui.get(lr_type_combo[cond])
         if lr_type == "Default" then
-            if lr_tick_counter[cond] == 0 then
+            -- Чередование L/R с задержкой 100мс (0.1 сек)
+            local period = 0.1
+            lr_default_last_switch[cond] = lr_default_last_switch[cond] or 0
+            if curtime - lr_default_last_switch[cond] >= period then
                 lr_state[cond] = (lr_state[cond] == "L") and "R" or "L"
+                lr_default_last_switch[cond] = curtime
             end
             local yaw_val
             if lr_state[cond] == "L" then
@@ -390,14 +486,13 @@ client.set_event_callback("setup_command", function(cmd)
                 yaw_val = main + (perc > 0 and client.random_int(-diff, diff) or 0)
             end
             ui.set(yaw_slider_ref, yaw_val)
-            lr_tick_counter[cond] = (lr_tick_counter[cond] + 1) % 2
         elseif lr_type == "Delay" then
             local delay_ticks = ui.get(delay_slider[cond])
-            local delay_ms = delay_ticks * 100
+            local delay_sec = delay_ticks * tickinterval
             way_timer[cond] = way_timer[cond] or 0
-            if realtime >= way_timer[cond] then
+            if curtime >= way_timer[cond] then
                 lr_state[cond] = (lr_state[cond] == "L") and "R" or "L"
-                way_timer[cond] = realtime + delay_ms
+                way_timer[cond] = curtime + delay_sec
             end
             local yaw_val
             if lr_state[cond] == "L" then
@@ -425,15 +520,15 @@ client.set_event_callback("setup_command", function(cmd)
         ui.set(yaw_slider_ref, yaw_val)
     elseif m == "RANDOM" then
         local delay_ticks = ui.get(random_delay_slider[cond])
-        local delay_ms = delay_ticks * 100
+        local delay_sec = delay_ticks * tickinterval
         random_delay_timer[cond] = random_delay_timer[cond] or 0
-        if realtime >= random_delay_timer[cond] then
+        if curtime >= random_delay_timer[cond] then
             local yaw_min = ui.get(random_slider_L[cond])
             local yaw_max = ui.get(random_slider_R[cond])
             if yaw_min > yaw_max then yaw_min, yaw_max = yaw_max, yaw_min end
             local yaw_val = client.random_int(yaw_min, yaw_max)
             ui.set(yaw_slider_ref, yaw_val)
-            random_delay_timer[cond] = realtime + delay_ms
+            random_delay_timer[cond] = curtime + delay_sec
         end
     elseif m == "Way" then
         local count = ui.get(way_count_slider[cond])
@@ -441,14 +536,74 @@ client.set_event_callback("setup_command", function(cmd)
         way_timer[cond] = way_timer[cond] or 0
         if way_index[cond] > count then way_index[cond] = 1 end
         local delay_ticks = ui.get(way_delay_sliders[cond][way_index[cond]])
-        local delay_ms = delay_ticks * 100
-        if realtime >= way_timer[cond] then
+        local delay_sec = delay_ticks * tickinterval
+        if curtime >= way_timer[cond] then
             way_index[cond] = way_index[cond] + 1
             if way_index[cond] > count then way_index[cond] = 1 end
-            way_timer[cond] = realtime + delay_ms
+            way_timer[cond] = curtime + delay_sec
         end
         ui.set(yaw_slider_ref, ui.get(way_yaw_sliders[cond][way_index[cond]]))
     end
 end)
 
 ui.set_visible(aa_btn, true)
+
+-- MISS INDICATOR с подробной информацией
+
+local miss_display_time = 10.0
+local miss_last_time = 0
+local miss_data = nil
+
+client.set_event_callback("aim_fire", function(e)
+    miss_last_time = globals.realtime()
+    miss_data = {
+        target = entity.get_player_name(e.target) or "unknown",
+        hc = e.hit_chance or "",
+        bt = e.backtrack or "",
+        dmg = e.damage or "",
+		teleported = e.teleported or "?"
+    }
+end)
+
+client.set_event_callback("paint", function()
+    if miss_data and globals.realtime() - miss_last_time < miss_display_time then
+        local text = string.format("! Fire to target: %s hitchance: %s bt: %s damage: %s lagcomp: %s",
+            miss_data.target,
+            miss_data.hc ~= nil and tostring(miss_data.hc) or "N/A",
+            miss_data.bt,
+            miss_data.dmg ~= nil and tostring(miss_data.dmg) or "N/A",
+            miss_data.teleported ~= nil and tostring(miss_data.teleported) or "N/A"
+        )
+        local screen_x, _ = client.screen_size()
+        renderer.text(screen_x / 2, 50, 255, 60, 60, 255, "cb", 0, text)
+        print(text)
+    end
+end)
+
+local miss_display_time = 10.0
+local miss_last_time = 0
+local miss_data = nil
+
+client.set_event_callback("aim_miss", function(e)
+    miss_last_time = globals.realtime()
+    miss_data = {
+        target = entity.get_player_name(e.target) or "unknown",
+        hc = e.hit_chance or "",
+        dmg = e.damage or "",
+        teleported = e.teleported or "?",
+    }
+end)
+
+client.set_event_callback("paint", function()
+    if miss_data and globals.realtime() - miss_last_time < miss_display_time then
+        local text2 = string.format("! Missed shot to target: %s hitchance: %s% damage: %s lagcomp: %s",
+            miss_data.target,
+            miss_data.hc ~= nil and tostring(miss_data.hc) or "N/A",
+            miss_data.dmg ~= nil and tostring(miss_data.dmg) or "N/A",
+            miss_data.teleported ~= nil and tostring(miss_data.teleported) or "N/A"
+        )
+        local screen_x, _ = client.screen_size()
+        renderer.text(screen_x / 2, 50, 255, 60, 60, 255, "cb", 0, text2)
+		print(text2)
+    end
+end)
